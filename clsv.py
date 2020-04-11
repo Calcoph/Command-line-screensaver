@@ -1,8 +1,10 @@
-from colorama import init, Cursor
+from colorama import init, Cursor, Back
 import modes
 import multiprocessing as mp
 import threading
-from shared import StopError, returnToMenu
+import json
+import shared
+import time
 
 init()
 
@@ -19,49 +21,135 @@ class StoppableThread(threading.Thread):
 
     def stopped(self):
         return self._stop_event.is_set()
+def create_profile():
+    shared.end_calibration.clear()
+    print("\033[2J", end="") # clear screen
+    def print_bar(size):
+        print(Back.GREEN, end="")
+        print(" " * size, end="")
+        print(Back.RESET, end="")
+        time.sleep(0.1)
+        print("\033[f") # Move to upper left corner
+        #print("\033[1B") # Move down 1 line
+        print("\033[J", end="") # Erase screen from cursor down
+        #print("\033[2K", end="") # Erases the line
+    width = 100
+    print("Move the bar with A and D until it fits exactly one row of the console, press G when it's ready")
+    while True:
+        print_bar(width)
+        if shared.increase_bar.is_set():
+            shared.increase_bar.clear()
+            width += 1
+        if shared.decrease_bar.is_set():
+            shared.decrease_bar.clear()
+            width -= 1
+        if shared.end_calibration.is_set():
+            shared.end_calibration.clear()
+            break
+    
+    print("\033[2J", end="") # clear screen
+    for i in range(100):
+        print(i)
+    height = int(input("If you scroll so 0 is at the top of the console, what is the last number you see?"))
+    print(f"Your console is {width}x{height}")
+
+    name = input("Name this profile: ")
+
+    with open("profiles.json", "r") as f:
+        profiles = json.loads(f.read())
+
+    profiles[name] = {
+            "width": width,
+            "height": height
+        }
+    json_profiles = json.dumps(profiles)
+
+    with open("profiles.json", "w") as f:
+        f.write(json_profiles)
+
+def delete_profile():
+    with open("profiles.json", "r") as f:
+        profiles = json.loads(f.read())
+    options = "What profile do you want to delete? "
+    enumeration = enumerate(profiles)
+    for i in profiles:
+        options += f"{i}"
+    
+    answer = input(options)
+    del profiles[answer]
+
+    json_profiles = json.dumps(profiles)
+    with open("profiles.json", "w") as f:
+        f.write(json_profiles)
+
+def check_stop():
+    if threading.current_thread().stopped():
+        raise shared.StopError
 
 def main():
     try:
-        def check_stop():
-            if threading.current_thread().stopped():
-                raise StopError
+        profiles = None
+        with open("profiles.json", "r") as f:
+            profiles = json.loads(f.read())
+                
+        
         def ask_again():
             print("\033[1A", end="") # Moves cursor up
             print("\033[2K", end="") # Erases the line
 
         def check_input(inp): # !!!!!!!    WIP    !!!!!!!!
             check_stop()
-            if inp.isdigit and inp in ["0", "1", "2"]:
+            options = []
+
+            for index, i in enumerate(profiles):
+                options.append(str(index))
+            if inp.isdigit and inp in options:
                 return int(inp)
+            elif inp == "config":
+                return inp
             else:
                 ask_again()
-                inp = check_input(input(
-                                        "0: atom terminal, 1: 1920x1080, 2: 1440x900: "
-                                        )
-                                  )
+                inp = ask()
                 return inp
-        print()
-        print("""Welcome to the command line screen saver! press "x" at any time\
- to exit the program or m to return to the menu.""")
-        resolution = check_input(input(
-                                       "0: atom terminal, 1: 1920x1080, 2: 1440x900: "
-                                       )
-                                 )
 
+        def ask():
+            string = ""
+            for index, i in enumerate(profiles):
+                string += f"{index}: {i}, "
+            string = string[:-2] + ": "
+            answer = check_input(input(string))
+            return answer
+        def config():
+            answer = input("what do you want to do? 0: create new profile, 1: delete profile")
+            if answer == "0":
+                create_profile()
+            elif answer == "1":
+                delete_profile()
+            elif answer == "2":
+                change_order()
+            else:
+                print("That's not an available option! type 0, 1 or 2")
+                config()
+
+        print()
+        print('Welcome to the command line screen saver! press "x" at any time \
+to exit the program or m to return to the menu. Type config to manage profiles')
+        answer = ask()
+
+        if answer == "config":
+            config()
+        else:
+            draw(answer, profiles)
+    except shared.StopError:
+        pass
+def draw(option, profiles):
+    try:
         height = 0
         width = 0
-
-        if resolution == 0:
-            height = 14
-            width = 194
-        elif resolution == 1:
-            height = 72
-            width = 271
-        elif resolution == 2:
-            height = 61
-            width = 203
-        else:
-            print("I don't know what you did but don't do it again")
+        for index, i in enumerate(profiles):
+            if option == index:
+                width = profiles[i]["width"]
+                height = profiles[i]["height"]
 
         def manage_mode_input(inp):
             check_stop()
@@ -130,9 +218,10 @@ def main():
 
         while True:
             print("Modes: color fall(0) | scan(1) | wave(2) | ripple(3)")
+            print("Press J and N to change the speed once the mode is selected")
             mode = manage_mode_input(input("choose mode: "))
-            if returnToMenu.is_set():
-                returnToMenu.clear()
+            if shared.returnToMenu.is_set():
+                shared.returnToMenu.clear()
             if mode == 0:
                 modes.color_fall(width, height)
             elif mode == 1:
@@ -150,7 +239,7 @@ def main():
                                                        + "(leave blank for default):"
                                                        ), 3)
                 modes.ripple(width, height, length)
-    except StopError:
+    except shared.StopError:
         pass
 
 main_t = StoppableThread(target=main)

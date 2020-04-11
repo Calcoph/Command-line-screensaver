@@ -2,7 +2,7 @@ from colorama import init, Fore, Back, Style
 from random import randint, choice
 import threading
 import time
-from shared import StopError, returnToMenu
+import shared
 
 init()
 
@@ -23,7 +23,7 @@ def check_stop():
     if threading.current_thread().stopped():
         print(Style.RESET_ALL)
         clear()
-        raise StopError
+        raise shared.StopError
 def clear():
     print("\033[2J", end="") # Clear screen
 
@@ -35,6 +35,17 @@ def get_color(num):
         return num
     else:
         return get_color(num-8)
+
+def check_speed():
+    if shared.decrease_speed.is_set():
+        speed_change = -0.01
+        shared.decrease_speed.clear()
+    elif shared.increase_speed.is_set():
+        speed_change = 0.01
+        shared.increase_speed.clear()
+    else:
+        speed_change = 0
+    return speed_change
 
 def randomize_colors(colorTable):
     newOrder = []
@@ -61,24 +72,29 @@ def randomize_colors(colorTable):
 def color_fall(width, height):
     clear()
     newColorTable = randomize_colors(colorTable)
+    time_gap = 0.05
     while True:
         check_stop()
-        if returnToMenu.is_set():
+        if shared.returnToMenu.is_set():
             return_to_menu()
             break
         for a in range(height):
             color = get_color(a)
             print(newColorTable[color], end="")
             print(" " * width, end="")
-            time.sleep(0.05)
+            time_gap += check_speed()
+            if time_gap < 0:
+                time_gap = 0
+            time.sleep(time_gap)
         print(Back.RESET)
         clear()
 
 def scan(width, height):
     clear()
+    time_gap = 0.05
     while True:
         check_stop()
-        if returnToMenu.is_set():
+        if shared.returnToMenu.is_set():
             return_to_menu()
             break
         for a in range(height-1): # -1 reset_cursor prints a line before moving
@@ -86,46 +102,60 @@ def scan(width, height):
                 color = get_color(randint(0, 7))
             print(colorTable[color], end="")
             print(" " * width, end="")
-            time.sleep(0.05)
+            time_gap += check_speed()
+            if time_gap < 0:
+                time_gap = 0
+            time.sleep(time_gap)
         reset_cursor()
 
-def wave(width, height, modifier="normal"):
+def wave(width, height, modifier="default"):
     clear()
     newColorTable = randomize_colors(colorTable)
     columns = 0
     if modifier == "default":
-        change = 1
+        change = 2
     elif modifier == "inverted":
-        change = -1
+        change = -2
+    
+    time_gap = 0.02
     while True:
         check_stop()
-        if returnToMenu.is_set():
+        if shared.returnToMenu.is_set():
             return_to_menu()
             break
-        for a in range(int(round((width+change)/2))):
-            color = (a % 8)
+        for a in range(width+change):
+            color = int((a % 32)/4)
             print(newColorTable[color], end="")
-            print(" "*2, end="")
+            print(" ", end="")
         columns += 1
         if columns > height:
-            time.sleep(0.02)
+            columns = height
+            time_gap += check_speed()
+            if time_gap < 0:
+                time_gap = 0
+            time.sleep(time_gap)
 
 def ripple(width, height, length=8):
     clear()
     newColorTable = randomize_colors(colorTable)
     columns = 0
-    change = 1
+    change = 2
+    time_gap = length/1000
     while True:
         check_stop()
-        if returnToMenu.is_set():
+        if shared.returnToMenu.is_set():
             return_to_menu()
             break
         for a in range(length):
-            for a in range(int(round((width+change)/2))):
-                color = (a % 8)
+            for a in range(width+change):
+                color = int((a % 32)/4)
                 print(newColorTable[color], end="")
-                print(" "*2, end="")
+                print(" ", end="")
             if columns > height:
-                time.sleep(length/1000)
+                columns = height
+                time_gap += check_speed()
+                if time_gap < 0:
+                    time_gap = 0
+                time.sleep(time_gap)
             columns += 1
         change = -change
